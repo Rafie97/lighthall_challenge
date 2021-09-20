@@ -13,9 +13,8 @@
   }
 }
 
-.App-header {
+.loginHeader {
   background-color: #282c34;
-  min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -28,11 +27,37 @@
   color: #61dafb;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.container {
+  width: 400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20;
+}
+
+/*class not tag */
+.input {
+  border: none;
+  background-color: #ddd;
+  margin-bottom: 20px;
+  padding: 8px;
+  font-size: 18px;
+  width: 100%;
+}
+
+p {
+  margin-block-start: 0em;
+  margin-block-end: 0em;
+}
+
+.registerSwitch {
+  margin-top: 4em;
+  user-select: none;
+}
+
+.todoName {
+  font-size: 20;
+  font-weight: bold;
+  margin: 0;
 }
