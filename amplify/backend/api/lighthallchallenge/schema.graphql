@@ -1,8 +1,10 @@
 type Todo @model @auth(rules: [{ allow: owner }]) {
   id: ID!
-  name: String!
+  name: String
   description: String
   isDone: Boolean
   dueDate: Float
+  createdAt: AWSDateTime!
+  updatedAt: AWSDateTime!
+  owner: String!
 }
- 

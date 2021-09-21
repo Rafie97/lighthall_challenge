@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from "react";
 import Amplify, { API, graphqlOperation } from "aws-amplify";
-import { createTodo, deleteTodo } from "../graphql/mutations";
 import { listTodos } from "../graphql/queries";
 import DatePicker from "react-date-picker";
 import Dropdown from "react-dropdown";
 import "../App.css";
 import { AmplifySignOut } from "@aws-amplify/ui-react";
-
-//@auth(rules: [{ allow: owner }])
+import * as mutations from "../graphql/mutations";
+import * as queries from "../graphql/queries";
 
 type Todo = {
   id?: string;
@@ -15,6 +14,8 @@ type Todo = {
   description: string;
   dueDate: number;
   isDone: boolean;
+  _version?: number;
+  createdAt?: number;
 };
 
 const initialState = {
@@ -34,28 +35,43 @@ export default function TodoPage() {
   }, []);
 
   useEffect(() => {
-    const sortToDos = () => {
-      switch (sortBy) {
-        case 0:
-          return todos;
-        case 1:
-          return todos.sort((a, b) => {
-            return a.name > b.name ? -1 : 1;
-          });
-        case 2:
-          return todos.sort((a, b) => {
-            return a.description > b.description ? -1 : 1;
-          });
-        case 3:
-          return todos.sort((a, b) => b.dueDate - a.dueDate);
+    setTodos(sortTodos());
+  }, [sortBy, formState]);
 
-        default:
-          return todos;
-      }
-    };
+  function sortTodos() {
+    switch (sortBy) {
+      case 0:
+        return todos.sort((a, b) => {
+          return compare(a.name, b.name);
+        });
+      case 1:
+        return todos.sort((a, b) => {
+          return compare(a.name, b.name);
+        });
+      case 2:
+        return todos.sort((a, b) => {
+          //description
+          return compare(a.description, b.description);
+        });
+      case 3:
+        return todos.sort((a, b) => a.dueDate - b.dueDate);
 
-    setTodos(sortToDos);
-  }, [sortBy]);
+      default:
+        return todos.sort((a, b) => {
+          return compare(a.name, b.name);
+        });
+    }
+  }
+
+  function compare(a: string, b: string) {
+    if (a < b) {
+      return -1;
+    }
+    if (a > b) {
+      return 1;
+    }
+    return 0;
+  }
 
   function setInput(key: string, value: string) {
     setFormState({ ...formState, [key]: value });
@@ -63,13 +79,19 @@ export default function TodoPage() {
 
   async function fetchTodos() {
     try {
-      const todoData = await API.graphql(graphqlOperation(listTodos));
+      const todoData = await API.graphql({
+        query: queries.listTodos,
+      });
       //annoying error that says GraphQLResult type has no data property which is not true
       //@ts-ignore
-      const todos = todoData.data.listTodos.items;
-      setTodos(todos);
+      const todoos = todoData.data.listTodos.items as Todo[];
+
+      todoos.sort((a: Todo, b: Todo) => {
+        return a.name > b.name ? -1 : 1;
+      });
+      setTodos(todoos);
     } catch (err) {
-      console.log("error fetching todos");
+      console.log("error fetching todos", err);
     }
   }
 
@@ -79,21 +101,52 @@ export default function TodoPage() {
       const todo = { ...formState };
       setTodos([...todos, todo]);
       setFormState(initialState);
-      await API.graphql(graphqlOperation(createTodo, { input: todo }));
+      await API.graphql({
+        query: mutations.createTodo,
+        variables: { input: todo },
+      });
     } catch (err) {
       console.log("error creating todo:", err);
     }
   }
 
-  async function removeTodo(todo: Todo) {
+  async function removeTodo(todo: Todo, index: number) {
     try {
-      const updatedTodos = todos.filter((todoo) => todoo.name !== todo.name);
-      setTodos(updatedTodos);
-      console.log(todo);
-      const todoDetails = { id: todo.id, _version: 1 };
-      await API.graphql(graphqlOperation(deleteTodo, { input: todoDetails }));
+      if (todo.id) {
+        const updatedTodos = todos.filter((todoo) => todoo.name !== todo.name);
+        setTodos(updatedTodos);
+        const todoDetails = { id: todo.id /*_version: todo._version*/ };
+        await API.graphql({
+          query: mutations.deleteTodo,
+          variables: { input: todoDetails },
+        });
+      } else {
+        throw new Error("No id");
+      }
     } catch (err) {
       console.log("error deleting todo:", err);
+    }
+  }
+
+  async function updateTodo(todo: Todo, index: number) {
+    try {
+      if (todo.id) {
+        const done = !todo.isDone;
+
+        const updatedTodos = todos;
+        updatedTodos[index].isDone = done;
+        todo.isDone = done;
+
+        setTodos(updatedTodos);
+
+        await API.graphql({
+          query: mutations.updateTodo,
+          variables: { input: todo },
+        });
+        fetchTodos();
+      }
+    } catch (err) {
+      console.log("error updating todo:", err);
     }
   }
 
@@ -133,7 +186,6 @@ export default function TodoPage() {
       <div style={{ marginTop: 20, width: 200 }}>
         <DatePicker
           onChange={(event: any) => {
-            console.log(event.valueOf());
             setInput("dueDate", event.valueOf());
           }}
           value={new Date(formState.dueDate)}
@@ -145,56 +197,67 @@ export default function TodoPage() {
       </button>
 
       <div style={{ marginTop: 80 }}>
-        <div style={{ marginBottom: 40 }}>
-          Sort by:
-          <Dropdown
-            options={[
-              { value: "1", label: "Name" },
-              { value: "2", label: "Description" },
-              { value: "3", label: "Date" },
-            ]}
-            onChange={(event) => setSortBy(parseFloat(event.value))}
-            // value={"1"}
-          />
-        </div>
+        {todos.length > 0 && (
+          <div style={{ marginBottom: 40 }}>
+            Sort by:
+            <Dropdown
+              options={[
+                { value: "1", label: "Name" },
+                { value: "2", label: "Description" },
+                { value: "3", label: "Date" },
+              ]}
+              onChange={(event) => setSortBy(parseFloat(event.value))}
+              value={"1"}
+            />
+          </div>
+        )}
 
-        {todos.map((todo, index) => (
-          <div
-            style={{
-              flexDirection: "row" as "row",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            key={index}
-          >
-            <div style={styles.todo}>
-              <p className="todoName">{todo.name}</p>
-              <p style={styles.todoDescription}>{todo.description}</p>
-              <p style={styles.todoDescription}>
-                {new Date(todo.dueDate).toDateString()}
-              </p>
-              <p style={styles.todoDescription}>{todo.isDone}</p>
-            </div>
+        {todos.map((todo, index) => {
+          return (
             <div
               style={{
-                height: "100%",
-                flex: 1,
-                paddingLeft: 80,
-                display: "inline-block",
+                flexDirection: "row" as "row",
+                alignItems: "center",
+                justifyContent: "center",
               }}
+              key={index}
             >
-              <button
+              <div style={styles.todo}>
+                <p className="todoName">{todo.name}</p>
+                <p style={styles.todoDescription}>{todo.description}</p>
+                <p style={styles.todoDescription}>
+                  {new Date(todo.dueDate).toDateString()}
+                </p>
+                <p style={styles.todoDescription}>{todo.isDone}</p>
+              </div>
+              <div
                 style={{
-                  width: 40,
-                  height: 40,
+                  height: "100%",
+                  flex: 1,
+                  paddingLeft: 80,
+                  display: "inline-block",
                 }}
-                onClick={() => removeTodo(todo)}
               >
-                X
-              </button>
+                <input
+                  type="checkbox"
+                  onChange={() => updateTodo(todo, index)}
+                  checked={todo.isDone}
+                />
+                <p style={{ display: "inline-block", marginLeft: 5 }}>Done</p>
+                <button
+                  style={{
+                    width: 40,
+                    height: 40,
+                    marginLeft: 40,
+                  }}
+                  onClick={() => removeTodo(todo, index)}
+                >
+                  X
+                </button>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ type TodoMetaData = {
 
 export declare class Todo {
   readonly id: string;
-  readonly name: string;
+  readonly name?: string;
   readonly description?: string;
   readonly isDone?: boolean;
   readonly dueDate?: number;
